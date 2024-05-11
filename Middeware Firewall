@@ -1,0 +1,79 @@
+from typing import Any
+
+from django.conf import settings
+from django.core.cache import cache
+from django.core.exceptions import PermissionDenied, BadRequest
+
+from python_ipware import IpWare
+
+
+class BotProtectionMiddleware:
+    """Maintains a counter in cache to keep track of repeated bad requests.
+    If the request didn't come through Cloudflare proxy - block.
+    If the request made multiple 400 errors during a specific timeframe - block.
+    """
+
+    BAD_REQUEST_MAX_NUMBER = 10  # max number of bad requests before block
+    BAD_REQUEST_COUNTER_TIMEFRAME = 30  # how long to keep track of bad requests
+    BLOCK_DURATION = 60 * 60 * 24  # how long to block the IP 
+
+    def __init__(self, get_response) -> None:
+        self.get_response = get_response
+
+    def __call__(self, request) -> Any:
+        
+        ipw = IpWare()
+
+        ip, trusted_route = ipw.get_client_ip(meta=request.META)
+      
+        if not ip:
+            # IP not found for some reason, reject request
+            self.reject_request()
+
+        bad_requests_number_cache_key = "bad_requests_" + ip
+        blocked_ips_cache_key = "blocked_ip_" + ip
+
+        ip_blocked_check = cache.get(key=blocked_ips_cache_key)
+        if ip_blocked_check:
+            # IP is still blocked, reject request
+            self.reject_request()
+
+        # check if current IP has accrued enough bad requests for a block
+        current_ip_bad_requests = cache.get(bad_requests_number_cache_key)
+        if (
+            current_ip_bad_requests
+            and current_ip_bad_requests >= self.BAD_REQUEST_MAX_NUMBER
+        ):
+            cache.set(key=blocked_ips_cache_key, value=1, timeout=self.BLOCK_DURATION)
+            self.reject_request()
+
+        response = self.get_response(request)
+
+        if response.status_code == 400:
+            # bad request - increment number of fails and refresh timeout
+            last_cache_value = cache.get(key=bad_requests_number_cache_key)
+            if not last_cache_value:
+                last_cache_value = 0
+            cache.set(
+                key=bad_requests_number_cache_key,
+                value=last_cache_value + 1,
+                timeout=self.BAD_REQUEST_COUNTER_TIMEFRAME,
+            )
+        if response.status_code == 400:
+            # bad request - increment number of fails and refresh timeout
+            last_cache_value = cache.get(key=bad_requests_number_cache_key)
+            if not last_cache_value:
+                last_cache_value = 0
+            cache.set(
+                key=bad_requests_number_cache_key,
+                value=last_cache_value + 1,
+                timeout=self.BAD_REQUEST_COUNTER_TIMEFRAME,
+            )
+
+        return response
+
+    def reject_request(self, status_code: int = 403) -> None:
+        """Raises an error"""
+        if status_code == 403:
+            raise PermissionDenied
+        raise BadRequest
