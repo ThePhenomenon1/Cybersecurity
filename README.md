@@ -4,7 +4,7 @@ Fighting SQL injections and other broad surface exploits.
 
 When under attack from bots and you are facing SQL injections and other broad surface exploits: you can intercept them utilizing alerts from Sentry. (Sentry is an application performance monitoring and error-tracking software.)
 
-However, using Cloudflare, you forget to set up your server firewall to only allow traffic from Cloudflare's IPs. This means that all the bots probe the server directly, circumventing Cloudflare.
+However, what if while using Cloudflare, you forget to set up your server firewall to only allow traffic from Cloudflare's IPs? This means that all the bots probe the server directly, circumventing Cloudflare.
 
 Once this oversight is remedied, traffic and server load will drop dramatically.
 
